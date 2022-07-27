@@ -29,6 +29,8 @@ void gprotection_13();
 void fpage_14();
 void checkalain_17();
 void irq_timer();
+void irq_kbd();
+void irq_serial();
 
 /* For debugging, so print_trapframe can distinguish between printing
  * a saved trapframe and printing the current trapframe and print some
@@ -116,7 +118,16 @@ trap_init(void)
 	        INTERRUPT_GATE,
 	        GD_KT,
 	        irq_timer,
-	        RING_KERNEL);
+	        RING_USER);
+
+	// LAB 5
+
+	SETGATE(idt[IRQ_OFFSET + IRQ_KBD], INTERRUPT_GATE, GD_KT, irq_kbd, RING_USER);
+	SETGATE(idt[IRQ_OFFSET + IRQ_SERIAL],
+	        INTERRUPT_GATE,
+	        GD_KT,
+	        irq_serial,
+	        RING_USER);
 
 	// Per-CPU setup
 	trap_init_percpu();
@@ -236,6 +247,12 @@ trap_dispatch(struct Trapframe *tf)
 	} else if (tf->tf_trapno == IRQ_TIMER + IRQ_OFFSET) {
 		lapic_eoi();
 		sched_yield();
+	} else if (tf->tf_trapno == IRQ_OFFSET + IRQ_KBD) {
+		kbd_intr();
+		return;
+	} else if (tf->tf_trapno == IRQ_OFFSET + IRQ_SERIAL) {
+		serial_intr();
+		return;
 	} else {
 		// Unexpected trap: The user process or the kernel has a bug.
 		print_trapframe(tf);

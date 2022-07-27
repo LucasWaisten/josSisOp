@@ -74,22 +74,29 @@ duppage(envid_t envid, unsigned pn)
 	// LAB 4: Your code here.
 	void *addr = (void *) (pn * PGSIZE);  // Virtual address
 
-	if ((uvpt[pn] & PTE_W) ||
-	    (uvpt[pn] & PTE_COW)) {  // Verifico si es writable o copy-on-write
+	if (uvpt[pn] & PTE_SHARE) {
+		sys_page_map(0, addr, envid, addr, PTE_SYSCALL);
+	} else {
+		if ((uvpt[pn] & PTE_W) ||
+		    (uvpt[pn] &
+		     PTE_COW)) {  // Verifico si es writable o copy-on-write
 
-		if (sys_page_map(0, addr, envid, addr, PTE_COW | PTE_U | PTE_P) <
-		    0) {
-			panic("Error: [fork.c]-->[duppage()]--> sys_page_map.");
-		}
+			if (sys_page_map(0, addr, envid, addr, PTE_COW | PTE_U | PTE_P) <
+			    0) {
+				panic("Error: [fork.c]-->[duppage()]--> "
+				      "sys_page_map.");
+			}
 
-		if (sys_page_map(0, addr, 0, addr, PTE_COW | PTE_U | PTE_P) < 0) {
-			panic("Error: [fork.c]-->[duppage()]-->sys_page_map.");
-		}
-
-	} else {  // Caso: solo lectura la compartimos
-
-		if (sys_page_map(0, addr, envid, addr, PTE_U | PTE_P) < 0) {
-			panic("Error: [fork.c]-->[duppage()]-->sys_page_map.");
+			if (sys_page_map(0, addr, 0, addr, PTE_COW | PTE_U | PTE_P) <
+			    0) {
+				panic("Error: "
+				      "[fork.c]-->[duppage()]-->sys_page_map.");
+			}
+		} else {  // Caso: solo lectura la compartimos
+			if (sys_page_map(0, addr, envid, addr, PTE_U | PTE_P) < 0) {
+				panic("Error: "
+				      "[fork.c]-->[duppage()]-->sys_page_map.");
+			}
 		}
 	}
 	// panic("duppage not implemented");

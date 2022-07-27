@@ -323,5 +323,19 @@ static int
 copy_shared_pages(envid_t child)
 {
 	// LAB 5: Your code here.
+	// panic("error en copy shared pages");
+	uintptr_t i = 0;
+
+	while (i < UTOP) {
+		if ((uvpd[PDX(i)] & PTE_P) && (uvpt[PGNUM(i)] & PTE_P) &&
+		    (uvpt[PGNUM(i)] & PTE_U) && (uvpt[PGNUM(i)] & PTE_SHARE)) {
+			sys_page_map(0,
+			             (void *) i,
+			             child,
+			             (void *) i,
+			             PTE_SYSCALL & (uvpt[PGNUM(i)]));
+		}
+		i += PGSIZE;
+	}
 	return 0;
 }

@@ -64,6 +64,12 @@
   */
  TRAPHANDLER_NOEC(irq_timer,IRQ_OFFSET + IRQ_TIMER)
 
+  /*
+  * Lab 5: Handler IRQ
+  */
+ TRAPHANDLER_NOEC(irq_kbd,IRQ_OFFSET + IRQ_KBD)
+ TRAPHANDLER_NOEC(irq_serial,IRQ_OFFSET + IRQ_SERIAL)
+
  /*Handler generate code */
  TRAPHANDLER(ddfault_8,T_DBLFLT)
  TRAPHANDLER(invalid_10,T_TSS)
