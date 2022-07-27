@@ -9,7 +9,7 @@ struct Elf {
 	uint16_t e_type;
 	uint16_t e_machine;
 	uint32_t e_version;
-	uint32_t e_entry;
+	uint32_t e_entry;  //entry point
 	uint32_t e_phoff;
 	uint32_t e_shoff;
 	uint32_t e_flags;
@@ -22,14 +22,14 @@ struct Elf {
 };
 
 struct Proghdr {
-	uint32_t p_type;
+	uint32_t p_type; 
 	uint32_t p_offset;
-	uint32_t p_va;
-	uint32_t p_pa;
-	uint32_t p_filesz;
-	uint32_t p_memsz;
-	uint32_t p_flags;
-	uint32_t p_align;
+	uint32_t p_va; //dir virtual
+	uint32_t p_pa; // dir fisica
+	uint32_t p_filesz; // tamaño en bytes de los segmentos en la arc imagen
+	uint32_t p_memsz; // tamaño en bytes de los segmentos en memoria
+	uint32_t p_flags; 
+	uint32_t p_align; //0 no esta alineado, 1 esta alineado
 };
 
 struct Secthdr {

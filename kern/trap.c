@@ -11,6 +11,25 @@
 
 static struct Taskstate ts;
 
+void divide_0();
+void debug_1();
+void breakpoint_3();
+void overflow_4();
+void bound_5();
+void invalid_6();
+void device_7();
+void floatpoint_16();
+void machine_18();
+void foatponit_19();
+void systemcall_48();
+void ddfault_8();
+void invalid_10();
+void segmen_11();
+void stack_12();
+void gprotection_13();
+void fpage_14();
+void checkalain_17();
+
 /* For debugging, so print_trapframe can distinguish between printing
  * a saved trapframe and printing the current trapframe and print some
  * additional information in the latter case.
@@ -61,9 +80,34 @@ trapname(int trapno)
 void
 trap_init(void)
 {
+#define RING_KERNEL 0
+#define RING_USER 3
+#define INTERRUPT_GATE 0
+#define TRAP_GATE 1
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+
+
+	SETGATE(idt[T_DIVIDE], INTERRUPT_GATE, GD_KT, divide_0, RING_KERNEL);
+	SETGATE(idt[T_DEBUG], INTERRUPT_GATE, GD_KT, debug_1, RING_KERNEL);
+	SETGATE(idt[T_BRKPT], INTERRUPT_GATE, GD_KT, breakpoint_3, RING_USER);
+	SETGATE(idt[T_OFLOW], INTERRUPT_GATE, GD_KT, overflow_4, RING_KERNEL);
+	SETGATE(idt[T_BOUND], INTERRUPT_GATE, GD_KT, bound_5, RING_KERNEL);
+	SETGATE(idt[T_ILLOP], INTERRUPT_GATE, GD_KT, invalid_6, RING_KERNEL);
+	SETGATE(idt[T_DEVICE], INTERRUPT_GATE, GD_KT, device_7, RING_KERNEL);
+	SETGATE(idt[T_FPERR], INTERRUPT_GATE, GD_KT, floatpoint_16, RING_KERNEL);
+	SETGATE(idt[T_MCHK], INTERRUPT_GATE, GD_KT, machine_18, RING_KERNEL);
+	SETGATE(idt[T_SIMDERR], INTERRUPT_GATE, GD_KT, foatponit_19, RING_KERNEL);
+	SETGATE(idt[T_SYSCALL], INTERRUPT_GATE, GD_KT, systemcall_48, RING_USER);
+	SETGATE(idt[T_DBLFLT], INTERRUPT_GATE, GD_KT, ddfault_8, RING_KERNEL);
+	SETGATE(idt[T_TSS], INTERRUPT_GATE, GD_KT, invalid_10, RING_KERNEL);
+	SETGATE(idt[T_SEGNP], INTERRUPT_GATE, GD_KT, segmen_11, RING_KERNEL);
+	SETGATE(idt[T_STACK], INTERRUPT_GATE, GD_KT, stack_12, RING_KERNEL);
+	SETGATE(idt[T_GPFLT], INTERRUPT_GATE, GD_KT, gprotection_13, RING_KERNEL);
+	SETGATE(idt[T_PGFLT], INTERRUPT_GATE, GD_KT, fpage_14, RING_KERNEL);
+	SETGATE(idt[T_ALIGN], INTERRUPT_GATE, GD_KT, checkalain_17, RING_KERNEL);
+
 
 	// Per-CPU setup
 	trap_init_percpu();
@@ -143,14 +187,28 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
 
-	// Unexpected trap: The user process or the kernel has a bug.
-	print_trapframe(tf);
-	if (tf->tf_cs == GD_KT)
-		panic("unhandled trap in kernel");
-	else {
-		env_destroy(curenv);
+	if (tf->tf_trapno == T_PGFLT) {
+		page_fault_handler(tf);
+	} else if (tf->tf_trapno == T_BRKPT) {
+		monitor(tf);
+	} else if (tf->tf_trapno == T_SYSCALL) {
+		tf->tf_regs.reg_eax = syscall(tf->tf_regs.reg_eax,
+		                              tf->tf_regs.reg_edx,
+		                              tf->tf_regs.reg_ecx,
+		                              tf->tf_regs.reg_ebx,
+		                              tf->tf_regs.reg_edi,
+		                              tf->tf_regs.reg_esi);
 		return;
+	} else {
+		// Unexpected trap: The user process or the kernel has a bug.
+		print_trapframe(tf);
+		if (tf->tf_cs == GD_KT)
+			panic("unhandled trap in kernel");
+		else {
+			env_destroy(curenv);
+		}
 	}
+	return;
 }
 
 void
@@ -203,6 +261,10 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+
+	if ((tf->tf_cs & 3) == 0) {
+		panic("page_fault_handler in kernel mode (ring 0)");
+	}
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
