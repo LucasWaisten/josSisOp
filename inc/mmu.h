@@ -73,7 +73,7 @@
 #define PTE_SYSCALL	(PTE_AVAIL | PTE_P | PTE_W | PTE_U)
 
 // Address in page table or page directory entry
-#define PTE_ADDR(pte)	((physaddr_t) (pte) & ~0xFFF)
+#define PTE_ADDR(pte)	((physaddr_t) (pte) & ~0xFFF) // PTE_ADDR devuelve la dirección de la tabla de páginas
 
 // Control Register flags
 #define CR0_PE		0x00000001	// Protection Enable
