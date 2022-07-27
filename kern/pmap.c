@@ -221,14 +221,6 @@ mem_init(void)
 	boot_map_region(kern_pgdir, UENVS, PTSIZE, PADDR(envs), PTE_U | PTE_P);
 
 	//////////////////////////////////////////////////////////////////////
-	// Map the 'envs' array read-only by the user at linear address UENVS
-	// (ie. perm = PTE_U | PTE_P).
-	// Permissions:
-	//    - the new image at UENVS  -- kernel R, user R
-	//    - envs itself -- kernel RW, user NONE
-	// LAB 3: Your code here.
-
-	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
 	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
@@ -308,8 +300,15 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+	for (int i = 0; i < NCPU; i++) {
+		uint32_t kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+		boot_map_region(kern_pgdir,
+		                kstacktop_i - KSTKSIZE,
+		                KSTKSIZE,
+		                PADDR(percpu_kstacks[i]),
+		                PTE_W | PTE_P);
+	}
 }
-
 // --------------------------------------------------------------
 // Tracking of physical pages.
 // The 'pages' array has one 'struct PageInfo' entry per physical page.
@@ -365,6 +364,8 @@ page_init(void)
 		} else if ((IOPHYSMEM <= (i * PGSIZE) &&
 		            (i * PGSIZE) < EXTPHYSMEM)) {
 			continue;
+		} else if (i == MPENTRY_PADDR / PGSIZE) {
+			continue;
 		} else if ((EXTPHYSMEM <= (i * PGSIZE)) &&
 		           (i * PGSIZE) < (PADDR(boot_alloc(0)) + EXTPHYSMEM)) {  // CASO DE ALGUNA ESTRUCTURA DE DATOS QUE EL KERNEL A USADO EN BOOT_ALLOC
 			continue;
@@ -377,10 +378,10 @@ page_init(void)
 }
 
 //
-// Allocates a physical page.  If (alloc_flags & ALLOC_ZERO), fills the entire
-// returned physical page with '\0' bytes.  Does NOT increment the reference
-// count of the page - the caller must do these if necessary (either explicitly
-// or via page_insert).
+// Allocates a physical page.  If (alloc_flags & ALLOC_ZERO), fills the
+// entire returned physical page with '\0' bytes.  Does NOT increment
+// the reference count of the page - the caller must do these if
+// necessary (either explicitly or via page_insert).
 //
 // Be sure to set the pp_link field of the allocated page to NULL so
 // page_free can check for double-free bugs.
@@ -424,8 +425,8 @@ page_free(struct PageInfo *pp)  // recibe una pagina
 	pp->pp_link =
 	        page_free_list;  // pp apunta a la siguiente direccion, o sea a
 	                         // la que anteriormente era la primera pp libre
-	page_free_list = pp;     // inserta la pagina pp al inicio de la lista
-	                         // concatena
+	page_free_list = pp;     // inserta la pagina pp al inicio de la
+	                         // lista concatena
 }
 
 
@@ -511,10 +512,10 @@ map_page(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm, bool 
 
 		if (large_page) {
 			p_table = pgdir + PDX(va + i);
-			*p_table = (pa + i) | perm;
+			*p_table = (pa + i) | perm | PTE_P;
 		} else {
 			p_table = pgdir_walk(pgdir, (const void *) va + i, true);
-			*p_table = (pa + i) | perm;
+			*p_table = (pa + i) | perm | PTE_P;
 		}
 	}
 }
@@ -522,26 +523,30 @@ map_page(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm, bool 
 static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
-#ifndef TP1_PSE
-	// Código original.
-
-	// Para direccion virtual mapeada, leo la pagina y asigno en la memoria
-	// fisica. Luego incremento ambas direcciones y sigo leyendo
-	map_page(pgdir, va, size, pa, perm, false);
-#else
-	if (va % PTSIZE == 0 && size >= PTSIZE && pa % PTSIZE == 0) {
-		// Large Page 4MB
-		// Las large page deben estar alineada, por lo que verificaramos
-		// el modulo de la direccion tanto fisica como virtual y ademas,
-		// se debe tener en cuenta el tamaño de la page (que sea mayor
-		// igual a PTSIZE).
-		map_page(pgdir, va, size, pa, perm | PTE_PS, true);
-	} else {
-		// Short Page 2MB
-		map_page(pgdir, va, size, pa, perm, false);
-	}
-
+	while (size >= PGSIZE) {
+#ifdef TP1_PSE
+		if (va % PTSIZE == 0 && pa % PTSIZE == 0 && size >= PTSIZE) {
+			pgdir[PDX(va)] = pa | perm | PTE_P | PTE_PS;
+			va += PTSIZE;
+			pa += PTSIZE;
+			size -= PTSIZE;
+			continue;
+		}
 #endif
+		pte_t *pt_entry = pgdir_walk(pgdir, (void *) va, 1);
+		if (pt_entry == NULL) {
+			panic("Error: "
+			      "[pmap.c]-->[boot_map_region]-->pgdir_walk page");
+		}
+		if (*pt_entry & PTE_P) {
+			page_remove(pgdir, (void *) va);
+		}
+
+		*pt_entry = pa | perm | PTE_P;
+		va += PGSIZE;
+		pa += PGSIZE;
+		size -= PGSIZE;
+	}
 }
 
 //
@@ -603,8 +608,9 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 // Devuelve la página asignada a la dirección virtual 'va'.
 // Si pte_store no es cero, entonces almacenamos en él la dirección
 // del pte para esta página. Esto es utilizado por page_remove y
-// se puede usar para verificar los permisos de la página para los argumentos de llamada al sistema,
-// pero no debe ser utilizado por la mayoría de las personas que llaman.
+// se puede usar para verificar los permisos de la página para los
+// argumentos de llamada al sistema, pero no debe ser utilizado por la
+// mayoría de las personas que llaman.
 //
 // Devuelve NULL si no hay una página asignada en va.
 //
@@ -702,24 +708,36 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	// panic("mmio_map_region not implemented");
+
+	size_t sizeR = ROUNDUP(size, PGSIZE);
+
+	if (base + sizeR > MMIOLIM) {
+		panic("panic mmio_map_region");
+	}
+
+	boot_map_region(kern_pgdir, base, sizeR, pa, PTE_PCD | PTE_PWT | PTE_W);
+
+	uintptr_t interesado = base;
+	base += sizeR;
+	return (void *) interesado;
 }
 
 static uintptr_t user_mem_check_addr;
 
 // Check that an environment is allowed to access the range of memory
 // [va, va+len) with permissions 'perm | PTE_P'.
-// Normally 'perm' will contain PTE_U at least, but this is not required.
-// 'va' and 'len' need not be page-aligned; you must test every page that
-// contains any of that range.  You will test either 'len/PGSIZE',
-// 'len/PGSIZE + 1', or 'len/PGSIZE + 2' pages.
+// Normally 'perm' will contain PTE_U at least, but this is not
+// required. 'va' and 'len' need not be page-aligned; you must test
+// every page that contains any of that range.  You will test either
+// 'len/PGSIZE', 'len/PGSIZE + 1', or 'len/PGSIZE + 2' pages.
 //
-// A user program can access a virtual address if (1) the address is below
-// ULIM, and (2) the page table gives it permission.  These are exactly
-// the tests you should implement here.
+// A user program can access a virtual address if (1) the address is
+// below ULIM, and (2) the page table gives it permission.  These are
+// exactly the tests you should implement here.
 //
-// If there is an error, set the 'user_mem_check_addr' variable to the first
-// erroneous virtual address.
+// If there is an error, set the 'user_mem_check_addr' variable to the
+// first erroneous virtual address.
 //
 // Returns 0 if the user program can access this range of addresses,
 // and -E_FAULT otherwise.
@@ -1059,8 +1077,8 @@ check_page(void)
 	assert(pp1->pp_ref == 1);
 	assert(pp0->pp_ref == 1);
 
-	// should be able to map pp2 at PGSIZE because pp0 is already allocated
-	// for page table
+	// should be able to map pp2 at PGSIZE because pp0 is already
+	// allocated for page table
 	assert(page_insert(kern_pgdir, pp2, (void *) PGSIZE, PTE_W) == 0);
 	assert(check_va2pa(kern_pgdir, PGSIZE) == page2pa(pp2));
 	assert(pp2->pp_ref == 1);
@@ -1093,8 +1111,8 @@ check_page(void)
 	assert(*pgdir_walk(kern_pgdir, (void *) PGSIZE, 0) & PTE_W);
 	assert(!(*pgdir_walk(kern_pgdir, (void *) PGSIZE, 0) & PTE_U));
 
-	// should not be able to map at PTSIZE because need free page for page
-	// table
+	// should not be able to map at PTSIZE because need free page
+	// for page table
 	assert(page_insert(kern_pgdir, pp0, (void *) PTSIZE, PTE_W) < 0);
 
 	// insert pp1 at PGSIZE (replacing pp2)

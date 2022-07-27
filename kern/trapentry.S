@@ -59,6 +59,11 @@
  TRAPHANDLER_NOEC(foatponit_19,T_SIMDERR)
  TRAPHANDLER_NOEC(systemcall_48,T_SYSCALL)
 
+ /*
+  * Lab 4: Handler IRQ
+  */
+ TRAPHANDLER_NOEC(irq_timer,IRQ_OFFSET + IRQ_TIMER)
+
  /*Handler generate code */
  TRAPHANDLER(ddfault_8,T_DBLFLT)
  TRAPHANDLER(invalid_10,T_TSS)
@@ -78,7 +83,7 @@ _alltraps:
 	pushl %es
 	pushal
 
-	movl $GD_KD, %ax
+	movl $GD_KD, %eax
 	movw %ax, %ds
 	movw %ax, %es
 
