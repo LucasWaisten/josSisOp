@@ -221,7 +221,6 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
-
 	if (tf->tf_trapno == T_PGFLT) {
 		page_fault_handler(tf);
 	} else if (tf->tf_trapno == T_BRKPT) {
@@ -246,9 +245,31 @@ trap_dispatch(struct Trapframe *tf)
 			env_destroy(curenv);
 		}
 	}
-	return;
-}
+	// Handle spurious interrupts
+	// The hardware sometimes raises these because of noise on the
+	// IRQ line or other reasons. We don't care.
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_SPURIOUS) {
+		cprintf("Spurious interrupt on irq 7\n");
+		print_trapframe(tf);
+		return;
+	}
 
+	// Handle clock interrupts. Don't forget to acknowledge the
+	// interrupt using lapic_eoi() before calling the scheduler!
+	// LAB 4: Your code here.
+
+	// Handle keyboard and serial interrupts.
+	// LAB 5: Your code here.
+
+	// Unexpected trap: The user process or the kernel has a bug.
+	print_trapframe(tf);
+	if (tf->tf_cs == GD_KT)
+		panic("unhandled trap in kernel");
+	else {
+		env_destroy(curenv);
+		return;
+	}
+}
 void
 trap(struct Trapframe *tf)
 {
@@ -286,8 +307,8 @@ trap(struct Trapframe *tf)
 		}
 
 		// Copy trap frame (which is currently on the stack)
-		// into 'curenv->env_tf', so that running the environment
-		// will restart at the trap point.
+		// into 'curenv->env_tf', so that running the
+		// environment will restart at the trap point.
 		curenv->env_tf = *tf;
 		// The trapframe on the stack should be ignored from here on.
 		tf = &curenv->env_tf;
@@ -326,8 +347,8 @@ page_fault_handler(struct Trapframe *tf)
 		panic("page_fault_handler in kernel mode (ring 0)");
 	}
 
-	// We've already handled kernel-mode exceptions, so if we get here,
-	// the page fault happened in user mode.
+	// We've already handled kernel-mode exceptions, so if we get
+	// here, the page fault happened in user mode.
 
 	// Call the environment's page fault upcall, if one exists.  Set up a
 	// page fault stack frame on the user exception stack (below
@@ -337,13 +358,14 @@ page_fault_handler(struct Trapframe *tf)
 	// we branch to the page fault upcall recursively, pushing another
 	// page fault stack frame on top of the user exception stack.
 	//
-	// The trap handler needs one word of scratch space at the top of the
-	// trap-time stack in order to return.  In the non-recursive case, we
-	// don't have to worry about this because the top of the regular user
-	// stack is free.  In the recursive case, this means we have to leave
-	// an extra word between the current top of the exception stack and
-	// the new stack frame because the exception stack _is_ the trap-time
-	// stack.
+	// It is convenient for our code which returns from a page fault
+	// (lib/pfentry.S) to have one word of scratch space at the top of the
+	// trap-time stack; it allows us to more easily restore the eip/esp. In
+	// the non-recursive case, we don't have to worry about this because
+	// the top of the regular user stack is free.  In the recursive case,
+	// this means we have to leave an extra word between the current top of
+	// the exception stack and the new stack frame because the exception
+	// stack _is_ the trap-time stack.
 	//
 	// If there's no page fault upcall, the environment didn't allocate a
 	// page for its exception stack or can't write to it, or the exception
@@ -361,8 +383,8 @@ page_fault_handler(struct Trapframe *tf)
 	if (curenv->env_pgfault_upcall != NULL) {
 		struct UTrapframe *u;
 
-		// Inicializar a la dirección correcta por abajo de UXSTACKTOP.
-		// No olvidar llamadas a user_mem_assert().
+		// Inicializar a la dirección correcta por abajo de
+		// UXSTACKTOP. No olvidar llamadas a user_mem_assert().
 		if (tf->tf_esp >= (UXSTACKTOP - PGSIZE) &&
 		    tf->tf_esp < UXSTACKTOP) {
 			u = (struct UTrapframe *) (tf->tf_esp -
